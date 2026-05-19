@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>配额仪表盘</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#1c1916;--surface:#262320;--surface2:#2d2a26;--border:#3d3832;
+  --text:#e8e4de;--text2:#a09888;--text3:#7a7068;
+  --green:#10b981;--amber:#ffd862;--red:#c65746;
+  --bar-bg:#262320;
+  --accent:#10b981;
+  --claude-gradient:linear-gradient(180deg,rgba(251,236,228,.10),rgba(251,236,228,0));
+  --codex-gradient:linear-gradient(180deg,rgba(234,231,255,.10),rgba(234,231,255,0));
+  --antigravity-gradient:linear-gradient(180deg,rgba(224,247,250,.08),rgba(224,247,250,0));
+  --gemini-gradient:linear-gradient(180deg,rgba(224,232,255,.12),rgba(224,232,255,0));
+  --kimi-gradient:linear-gradient(180deg,rgba(220,232,255,.12),rgba(220,232,255,0));
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:20px}
+
+.login-overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:100}
+.login-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:36px;width:340px;text-align:center}
+.login-box h2{margin-bottom:20px;font-size:1.3rem;color:var(--text)}
+.login-input{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-size:.95rem;outline:none;margin-bottom:14px}
+.login-input:focus{border-color:var(--green)}
+.login-error{color:var(--red);font-size:.85rem;margin-bottom:10px;min-height:1.2em}
+
+.header{max-width:1200px;margin:0 auto 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.header h1{font-size:1.4rem;font-weight:600;color:var(--text)}
+.header-right{display:flex;align-items:center;gap:12px}
+.btn{background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:7px 16px;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:500;transition:all .2s}
+.btn:hover{border-color:var(--text3);color:var(--text)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:var(--green);color:#fff;border-color:var(--green)}
+.btn-primary:hover{opacity:.85}
+.auto-refresh{display:flex;align-items:center;gap:6px;color:var(--text2);font-size:.85rem}
+.auto-refresh input{accent-color:var(--green)}
+
+.nav{max-width:1200px;margin:0 auto 20px;display:flex;gap:6px;flex-wrap:wrap}
+.nav a{text-decoration:none;padding:6px 14px;border-radius:8px;font-size:.83rem;font-weight:500;color:var(--text3);border:1px solid var(--border);transition:all .15s}
+.nav a:hover{color:var(--text);border-color:var(--text3)}
+.nav a.active{color:var(--green);border-color:var(--green);background:rgba(16,185,129,.08)}
+
+.provider-section{max-width:1200px;margin:0 auto 28px}
+.provider-header{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.provider-badge{font-size:.78rem;padding:3px 10px;border-radius:8px;font-weight:600;letter-spacing:.02em}
+.provider-count{color:var(--text3);font-size:.8rem}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:16px}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;transition:all .2s}
+.card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;gap:8px}
+.card-account{font-size:.95rem;font-weight:500;word-break:break-all;flex:1;color:var(--text)}
+.card-plan{font-size:.73rem;padding:2px 8px;border-radius:6px;font-weight:600;white-space:nowrap}
+.card-meta{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px}
+.card-time{font-size:.75rem;color:var(--text3)}
+.card-refresh{cursor:pointer;background:none;border:1px solid var(--border);color:var(--text3);padding:3px 10px;border-radius:6px;font-size:.73rem;transition:all .15s}
+.card-refresh:hover{border-color:var(--green);color:var(--green)}
+.card-refresh:disabled{opacity:.4;cursor:not-allowed}
+.card-refresh.loading{color:var(--green);border-color:var(--green)}
+.card-error{color:var(--red);font-size:.85rem;padding:8px;background:rgba(198,87,70,.08);border-radius:8px}
+
+.quota-separator{border:none;border-top:1px dashed var(--border);margin:0 0 14px}
+
+.quota-item{margin-bottom:14px}
+.quota-item:last-child{margin-bottom:0}
+.quota-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:.82rem}
+.quota-name{color:var(--text2)}
+.quota-right{display:flex;align-items:center;gap:10px}
+.quota-pct{font-weight:600;font-variant-numeric:tabular-nums}
+.quota-reset{font-size:.73rem;color:var(--text3)}
+.bar{height:8px;background:var(--bar-bg);border-radius:999px;overflow:hidden}
+.bar-fill{height:100%;border-radius:999px;transition:width .4s ease}
+.bar-high{background:var(--green)}
+.bar-mid{background:var(--amber)}
+.bar-low{background:var(--red)}
+.extra-info{margin-top:10px;padding:8px 10px;background:var(--surface2);border-radius:8px;font-size:.82rem;color:var(--text2)}
+
+.loading-wrap{text-align:center;padding:60px;color:var(--text3);font-size:1rem}
+.spinner{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite;margin-right:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;color:var(--text3);padding:40px}
+
+.badge-claude{background:#5e2c14;color:#e8a882}
+.badge-codex{background:#262395;color:#b5b0ff}
+.badge-antigravity{background:#004d40;color:#80deea}
+.badge-gemini-cli{background:#1c3f73;color:#a8c7ff}
+.badge-kimi{background:#003880;color:#70b5ff}
+
+.card-claude{background-image:var(--claude-gradient)}
+.card-codex{background-image:var(--codex-gradient)}
+.card-antigravity{background-image:var(--antigravity-gradient)}
+.card-gemini-cli{background-image:var(--gemini-gradient)}
+.card-kimi{background-image:var(--kimi-gradient)}
+
+@media(max-width:600px){
+  .header{flex-direction:column;align-items:flex-start}
+  .cards{grid-template-columns:1fr}
+  body{padding:12px}
+  .login-box{width:90%;min-width:0}
+}
+</style>
+</head>
+<body>
+
+<div class="login-overlay" id="loginOverlay" style="display:none">
+  <div class="login-box">
+    <h2>配额仪表盘</h2>
+    <div class="login-error" id="loginError"></div>
+    <input class="login-input" id="loginPwd" type="password" placeholder="请输入访问密码" autofocus>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">登录</button>
+  </div>
+</div>
+
+<div id="mainApp" style="display:none">
+  <div class="header">
+    <h1 id="pageTitle">配额仪表盘</h1>
+    <div class="header-right">
+      <label class="auto-refresh">
+        <input type="checkbox" id="autoRefresh" checked>
+        自动刷新
+      </label>
+      <button class="btn" id="refreshAllBtn" onclick="doRefreshAll()">全部刷新</button>
+    </div>
+  </div>
+  <nav class="nav" id="nav"></nav>
+  <div id="content">
+    <div class="loading-wrap"><span class="spinner"></span>正在获取配额信息...</div>
+  </div>
+</div>
+
+<script>
+const PROVIDER_LABELS = {
+  claude:'Claude Code', codex:'Codex', antigravity:'Antigravity',
+  'gemini-cli':'Gemini CLI', kimi:'Kimi',
+};
+const PROVIDER_ORDER = ['claude','codex','antigravity','gemini-cli','kimi'];
+
+const PATH_MAP = {
+  '/claude': ['claude'],
+  '/codex': ['codex'],
+  '/antigravity': ['antigravity'],
+  '/gemini-cli': ['gemini-cli'],
+  '/kimi': ['kimi'],
+  '/all': null,
+  '/': null,
+};
+const PAGE_TITLES = {
+  '/claude': 'Claude Code 配额',
+  '/codex': 'Codex 配额',
+  '/antigravity': 'Antigravity 配额',
+  '/gemini-cli': 'Gemini CLI 配额',
+  '/kimi': 'Kimi 配额',
+  '/all': '全部配额',
+  '/': '配额仪表盘',
+};
+
+function currentFilter() {
+  const p = location.pathname.replace(/\/+$/,'') || '/';
+  return PATH_MAP.hasOwnProperty(p) ? PATH_MAP[p] : null;
+}
+function currentPath() {
+  return location.pathname.replace(/\/+$/,'') || '/';
+}
+
+let token = localStorage.getItem('dashboard_token') || '';
+let autoTimer = null;
+const AUTO_INTERVAL = 2*60*60*1000;
+
+function headers() {
+  const h = {};
+  if (token) h['X-Dashboard-Token'] = token;
+  return h;
+}
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+function timeAgo(isoStr) {
+  if (!isoStr) return '未知';
+  const diff = Math.max(0, Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000));
+  if (diff < 10) return '刚刚';
+  if (diff < 60) return diff + ' 秒前';
+  const m = Math.floor(diff/60);
+  if (m < 60) return m + ' 分钟前';
+  const h = Math.floor(m/60);
+  if (h < 24) return h + ' 小时前';
+  return Math.floor(h/24) + ' 天前';
+}
+function maskEmail(s) {
+  if (!s) return s;
+  const at = s.indexOf('@');
+  if (at < 0) return s;
+  const domain = s.slice(at+1);
+  const dot = domain.indexOf('.');
+  return s.slice(0, at) + '@' + (dot > 0 ? domain.slice(0, dot) : domain);
+}
+
+function barClass(remaining) {
+  if (remaining == null) return 'bar-mid';
+  if (remaining >= 70) return 'bar-high';
+  if (remaining >= 30) return 'bar-mid';
+  return 'bar-low';
+}
+function pctColor(remaining) {
+  if (remaining >= 70) return 'var(--green)';
+  if (remaining >= 30) return 'var(--amber)';
+  return 'var(--red)';
+}
+function formatResetTime(raw) {
+  if (!raw) return '';
+  let d;
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(raw)) {
+    let s = raw.replace(' ', 'T');
+    if (/UTC$/i.test(s)) s = s.replace(/\s*UTC$/i, '+00:00');
+    if (!/[Z+-]\d{0,2}:?\d{0,2}$/.test(s)) s += '+00:00';
+    d = new Date(s);
+  } else {
+    d = new Date(raw);
+  }
+  if (isNaN(d.getTime())) return raw;
+  const localStr = d.getFullYear() + '-' +
+    String(d.getMonth()+1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0') + ' ' +
+    String(d.getHours()).padStart(2,'0') + ':' +
+    String(d.getMinutes()).padStart(2,'0');
+  const diff = d.getTime() - Date.now();
+  if (diff <= 0) return localStr + ' (已重置)';
+  const totalMin = Math.floor(diff / 60000);
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const mins = totalMin % 60;
+  let countdown = '';
+  if (days > 0) countdown += days + '天';
+  if (hours > 0) countdown += hours + '小时';
+  if (mins > 0 || !countdown) countdown += mins + '分钟';
+  return localStr + ' (' + countdown + '后)';
+}
+
+function renderNav() {
+  const cur = currentPath();
+  const tabs = [
+    {path:'/', label:'首页'},
+    {path:'/claude', label:'Claude Code'},
+    {path:'/codex', label:'Codex'},
+    {path:'/antigravity', label:'Antigravity'},
+    {path:'/gemini-cli', label:'Gemini CLI'},
+    {path:'/kimi', label:'Kimi'},
+    {path:'/all', label:'全部'},
+  ];
+  document.getElementById('nav').innerHTML = tabs.map(t =>
+    `<a href="${t.path}" class="${cur===t.path?'active':''}">${esc(t.label)}</a>`
+  ).join('');
+  document.getElementById('pageTitle').textContent = PAGE_TITLES[cur] || '配额仪表盘';
+  document.title = PAGE_TITLES[cur] || '配额仪表盘';
+}
+
+function renderWindow(w) {
+  const remaining = w.remaining_percent != null ? w.remaining_percent : (w.used_percent != null ? 100 - w.used_percent : null);
+  const displayPct = remaining != null ? Math.round(remaining) + '%' : '--';
+  const barWidth = remaining != null ? Math.max(0, Math.min(100, remaining)) : 0;
+  const detail = w.detail ? ` (${esc(w.detail)})` : '';
+  const resetStr = formatResetTime(w.reset_at);
+  return `
+    <div class="quota-item">
+      <div class="quota-label">
+        <span class="quota-name">${esc(w.label)}</span>
+        <span class="quota-right">
+          <span class="quota-pct" style="color:${pctColor(remaining)}">${displayPct}${detail}</span>
+          ${resetStr ? `<span class="quota-reset">${esc(resetStr)}</span>` : ''}
+        </span>
+      </div>
+      <div class="bar"><div class="bar-fill ${barClass(remaining)}" style="width:${barWidth}%"></div></div>
+    </div>`;
+}
+
+function renderCard(q) {
+  const account = maskEmail(q.account || '未知账号');
+  const plan = q.plan || '';
+  const provider = q.provider || '';
+  const nameAttr = esc(q.name || q.account || '');
+  const fetchedAt = q.fetched_at || '';
+  const badgeClass = 'badge-' + provider;
+  const cardClass = 'card-' + provider;
+
+  let body;
+  if (q.status === 'error') {
+    body = `<div class="card-error">${esc(q.error || '获取失败')}</div>`;
+  } else {
+    const wins = (q.windows||[]).map(renderWindow).join('');
+    let extra = '';
+    if (q.extra) extra = `<div class="extra-info">${esc(q.extra.label)}: ${esc(q.extra.used)} / ${esc(q.extra.limit)}</div>`;
+    body = wins ? `<hr class="quota-separator">${wins}` : '<div style="color:var(--text3);font-size:.85rem">暂无配额数据</div>';
+    body += extra;
+  }
+
+  return `
+    <div class="card ${cardClass}" data-account="${nameAttr}">
+      <div class="card-header">
+        <span class="card-account">${esc(account)}</span>
+        ${plan ? `<span class="card-plan ${badgeClass}">${esc(plan)}</span>` : ''}
+      </div>
+      <div class="card-meta">
+        <span class="card-time" data-fetched="${esc(fetchedAt)}">${timeAgo(fetchedAt)}</span>
+        <button class="card-refresh" onclick="doRefreshAccount('${nameAttr}', this)">刷新</button>
+      </div>
+      ${body}
+    </div>`;
+}
+
+function render(data) {
+  if (data.error && (!data.quotas || data.quotas.length === 0)) {
+    document.getElementById('content').innerHTML = `<div class="empty">连接失败: ${esc(data.error)}</div>`;
+    return;
+  }
+  const filter = currentFilter();
+  let quotas = data.quotas || [];
+  if (filter) {
+    quotas = quotas.filter(q => filter.includes(q.provider));
+  }
+  if (quotas.length === 0) {
+    const hint = filter ? `当前没有 ${filter.map(f=>PROVIDER_LABELS[f]||f).join('/')} 类型的账号` : '暂无配额数据';
+    document.getElementById('content').innerHTML = `<div class="empty">${esc(hint)}</div>`;
+    return;
+  }
+  const grouped = {};
+  quotas.forEach(q => {
+    const p = q.provider || 'unknown';
+    if (!grouped[p]) grouped[p] = [];
+    grouped[p].push(q);
+  });
+  let html = '';
+  const order = [...PROVIDER_ORDER, ...Object.keys(grouped).filter(k => !PROVIDER_ORDER.includes(k))];
+  for (const p of order) {
+    const items = grouped[p];
+    if (!items || !items.length) continue;
+    html += `
+      <div class="provider-section">
+        <div class="provider-header">
+          <span class="provider-badge badge-${esc(p)}">${esc(PROVIDER_LABELS[p]||p)}</span>
+          <span class="provider-count">${items.length} 个账号</span>
+        </div>
+        <div class="cards">${items.map(renderCard).join('')}</div>
+      </div>`;
+  }
+  document.getElementById('content').innerHTML = html;
+}
+
+function updateRelativeTimes() {
+  document.querySelectorAll('.card-time[data-fetched]').forEach(el => {
+    const iso = el.getAttribute('data-fetched');
+    if (iso) el.textContent = timeAgo(iso);
+  });
+}
+
+async function fetchQuotas() {
+  try {
+    const resp = await fetch('/api/quotas', {headers: headers()});
+    if (resp.status === 401) { showLogin(); return; }
+    render(await resp.json());
+  } catch(e) {
+    document.getElementById('content').innerHTML = `<div class="empty">请求失败: ${esc(e.message)}</div>`;
+  }
+}
+
+async function doRefreshAll() {
+  const btn = document.getElementById('refreshAllBtn');
+  btn.disabled = true; btn.textContent = '刷新中...';
+  try {
+    const resp = await fetch('/api/refresh', {method:'POST', headers: headers()});
+    if (resp.status === 401) { showLogin(); return; }
+    render(await resp.json());
+  } catch(e) {
+    document.getElementById('content').innerHTML = `<div class="empty">请求失败: ${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '全部刷新';
+  }
+}
+
+async function doRefreshAccount(name, btnEl) {
+  btnEl.disabled = true; btnEl.classList.add('loading'); btnEl.textContent = '刷新中...';
+  try {
+    const resp = await fetch(`/api/refresh?account=${encodeURIComponent(name)}`, {method:'POST', headers: headers()});
+    if (resp.status === 401) { showLogin(); return; }
+    render(await resp.json());
+  } catch(e) { /* ignore */ }
+}
+
+function showLogin() {
+  document.getElementById('loginOverlay').style.display = 'flex';
+  document.getElementById('mainApp').style.display = 'none';
+}
+function showApp() {
+  document.getElementById('loginOverlay').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'block';
+  renderNav();
+}
+async function doLogin() {
+  const pwd = document.getElementById('loginPwd').value;
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+  try {
+    const resp = await fetch('/api/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({password: pwd}),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      token = pwd;
+      localStorage.setItem('dashboard_token', token);
+      showApp();
+      fetchQuotas();
+    } else {
+      errEl.textContent = data.error || '密码错误';
+    }
+  } catch(e) { errEl.textContent = '连接失败'; }
+}
+document.getElementById('loginPwd').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+async function init() {
+  const resp = await fetch('/api/auth-check', {headers: headers()});
+  const data = await resp.json();
+  if (data.need_auth) {
+    showLogin();
+  } else {
+    showApp();
+    fetchQuotas();
+  }
+}
+
+function setupAutoRefresh() {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  if (document.getElementById('autoRefresh').checked) {
+    autoTimer = setInterval(() => fetchQuotas(), AUTO_INTERVAL);
+  }
+}
+document.getElementById('autoRefresh').addEventListener('change', setupAutoRefresh);
+setupAutoRefresh();
+setInterval(updateRelativeTimes, 30000);
+init();
+</script>
+</body>
+</html>
